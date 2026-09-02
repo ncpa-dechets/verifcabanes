@@ -86,6 +86,7 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .gal img{width:100%;height:100%;object-fit:cover}
 .addphoto{width:104px;height:104px;border:2px dashed var(--bord);border-radius:9px;background:#fafafa;font-size:13px;color:var(--txt2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
 #sheetFooter{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--bord);padding:10px 0 0;margin-top:14px}
+.lab{display:block;font-size:14px;font-weight:600;margin:10px 0 4px;color:var(--txt2)}
 .hint{font-size:12px;color:var(--txt2);margin:5px 0 0}
 .hist{font-size:12px;color:var(--txt2);border-left:3px solid var(--bord);padding-left:8px;margin-top:6px}
 
@@ -232,6 +233,9 @@ const STATUTS = {
   conditionnel: {lab:"Conditionnel / à revoir",col:"var(--cond)",  hex:"#6B4FBB"}
 };
 
+const REVETEMENTS = ['Terre / herbe','Enrobé','Béton','Gravier','Autre'];
+const SURFACES    = ['Moins de 5 m²','5 à 10 m²','10 à 20 m²','Plus de 20 m²'];
+
 let etat = {};                 // id -> {statut, date, commentaire, lat, lon, nb_photos}
 let file = JSON.parse(localStorage.getItem('ncpa_file') || '[]');  // envois en attente
 let maPos = null, siteCourant = null, brouillon = null;
@@ -282,12 +286,11 @@ function basculeFond(){
   else { map.removeLayer(cOrtho); cPositron.addTo(map); $('#btnFond').textContent='Satellite'; }
   setTimeout(()=>map.invalidateSize(), 100);
 }
-function icone(st, num){
+function icone(st){
   const c = STATUTS[st].hex;
-  return L.divIcon({className:'', iconSize:[36,36], iconAnchor:[18,18], html:
-    `<div style="width:34px;height:34px;border-radius:50%;background:${c};border:3px solid #fff;
-      box-shadow:0 1px 5px rgba(0,0,0,.45);color:#fff;font:700 14px Calibri,sans-serif;
-      display:flex;align-items:center;justify-content:center">${num}</div>`});
+  return L.divIcon({className:'', iconSize:[30,30], iconAnchor:[15,15], html:
+    `<div style="width:28px;height:28px;border-radius:50%;background:${c};border:4px solid #fff;
+      box-shadow:0 1px 5px rgba(0,0,0,.45)"></div>`});
 }
 
 /* ---------------- Filtres / rendu ---------------- */
@@ -312,7 +315,7 @@ function rafraichir(){
   // carte
   cMarkers.clearLayers();
   L2.forEach((s,i)=>{
-    const m = L.marker([s._lat,s._lon], {icon:icone(statutDe(s.id), i+1)}).addTo(cMarkers);
+    const m = L.marker([s._lat,s._lon], {icon:icone(statutDe(s.id))}).addTo(cMarkers);
     m.on('click', ()=>ouvrirFiche(s.id));
   });
   // liste
@@ -324,6 +327,7 @@ function rafraichir(){
       <div class="meta">
         <span class="chip">${STATUTS[st].lab}</span>
         ${s._d!=null?`<span><b>${fmtD(s._d)}</b></span>`:''}
+        ${e.revetement?`<span class="chip">${e.revetement}</span>`:''}
         ${e.nb_photos?`<span class="chip">${e.nb_photos} photo${e.nb_photos>1?'s':''}</span>`:''}
       </div></div>`;
   }).join('') || '<p style="color:var(--txt2)">Aucun site avec ces filtres.</p>';
@@ -359,6 +363,7 @@ function ouvrirFiche(id){
   siteCourant = SITES.find(s=>s.id===id);
   const e = etat[id] || {};
   brouillon = { statut: e.statut||null, commentaire: e.commentaire||'', photos: [],
+                revetement: e.revetement||'', surface: e.surface||'',
                 lat: e.lat||siteCourant.lat, lon: e.lon||siteCourant.lon, deplace: !!e.lat };
   dessinerFiche();
   $('#sheet').classList.add('open');
@@ -372,7 +377,7 @@ function dessinerFiche(){
     <h2>${s.commune}</h2>
     <p style="margin:2px 0 10px;color:var(--txt2)">${s.lib}</p>
     <div class="meta" style="font-size:13px;color:var(--txt2)">Distance depuis ma position : <b>${d}</b></div>
-    ${e.statut?`<div class="hist">Déjà renseigné le ${e.date?new Date(e.date).toLocaleDateString('fr-FR'):'?'} : ${STATUTS[e.statut].lab}${e.commentaire?'<br>« '+e.commentaire+' »':''}</div>`:''}
+    ${e.statut?`<div class="hist">Déjà renseigné le ${e.date?new Date(e.date).toLocaleDateString('fr-FR'):'?'} : ${STATUTS[e.statut].lab}${e.revetement?' · '+e.revetement:''}${e.surface?' · '+e.surface:''}${e.commentaire?'<br>« '+e.commentaire+' »':''}</div>`:''}
 
     <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">1. La cabane peut-elle être posée ?</h3>
     <div class="verdicts">
@@ -395,10 +400,22 @@ function dessinerFiche(){
     <div class="photos" id="photos"></div>
     <p class="hint">Vue d'ensemble + surface au sol. Les photos sont compressées avant envoi.</p>
 
-    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">3. Commentaire</h3>
-    <textarea id="cmt" placeholder="Place disponible, revêtement, contraintes d'accès, riverains…">${brouillon.commentaire}</textarea>
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">3. Nature du sol et place disponible</h3>
+    <label class="lab">Revêtement observé</label>
+    <select id="rev" style="margin-bottom:10px">
+      <option value="">— à renseigner —</option>
+      ${REVETEMENTS.map(r=>`<option ${brouillon.revetement===r?'selected':''}>${r}</option>`).join('')}
+    </select>
+    <label class="lab">Surface disponible estimée</label>
+    <select id="surf">
+      <option value="">— à renseigner —</option>
+      ${SURFACES.map(r=>`<option ${brouillon.surface===r?'selected':''}>${r}</option>`).join('')}
+    </select>
 
-    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">4. Emplacement</h3>
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">4. Commentaire</h3>
+    <textarea id="cmt" placeholder="Contraintes d'accès, stationnement, riverains, remarques…">${brouillon.commentaire}</textarea>
+
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">5. Emplacement</h3>
     <button class="btn ghost" onclick="repositionnerGPS()">Recaler sur ma position GPS actuelle</button>
     <button class="btn ghost" onclick="repositionnerCarte()">Déplacer le point sur la carte</button>
     ${dep?`<p class="hint">Point déplacé de ${dep} m par rapport au point d'origine.</p>`:'<p class="hint">Point inchangé.</p>'}
@@ -410,7 +427,11 @@ function dessinerFiche(){
   dessinerPhotos();
 }
 function choisir(k){ brouillon.statut=k; lireChamps(); dessinerFiche(); }
-function lireChamps(){ const t=$('#cmt'); if(t) brouillon.commentaire=t.value; }
+function lireChamps(){
+  const t=$('#cmt'); if(t) brouillon.commentaire=t.value;
+  const r=$('#rev');  if(r) brouillon.revetement=r.value;
+  const s=$('#surf'); if(s) brouillon.surface=s.value;
+}
 function fermerFiche(){ $('#sheet').classList.remove('open'); if(mDrag){ map.removeLayer(mDrag); mDrag=null; } }
 
 function dessinerPhotos(){
@@ -463,17 +484,20 @@ function fermerFicheGarderBrouillon(){ $('#sheet').classList.remove('open'); }
 function enregistrer(){
   lireChamps();
   if(!brouillon.statut) return toast("Choisissez d'abord un constat.");
+  if(!brouillon.revetement && !confirm("Revêtement non renseigné. Enregistrer quand même ?")) return;
   if(brouillon.photos.length===0 && !confirm("Aucune photo. Enregistrer quand même ?")) return;
   const s = siteCourant;
   const env = {
     uuid: uuid(), id_site: s.id, insee: s.insee, commune: s.commune, libelle: s.lib,
     statut: brouillon.statut, statut_libelle: STATUTS[brouillon.statut].lab,
+    revetement: brouillon.revetement, surface: brouillon.surface,
     commentaire: brouillon.commentaire, date: new Date().toISOString(),
     lat_origine: s.lat, lon_origine: s.lon, lat: brouillon.lat, lon: brouillon.lon,
     deplace_m: brouillon.deplace ? Math.round(dist(s.lat,s.lon,brouillon.lat,brouillon.lon)) : 0,
     photos: brouillon.photos
   };
   etat[s.id] = {statut:env.statut, date:env.date, commentaire:env.commentaire,
+                revetement:env.revetement, surface:env.surface,
                 lat:env.lat, lon:env.lon, nb_photos:env.photos.length};
   localStorage.setItem('ncpa_etat', JSON.stringify(etat));
   file.push(env); sauverFile();
