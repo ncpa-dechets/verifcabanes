@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>NCPA — Vérification terrain cabanes à cartons</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
+<style>
+:root{
+  --rouge:#B91E27; --vert:#B1B993;
+  --gris:#9AA0A6; --ok:#1E8E3E; --dalle:#E8710A; --ko:#B91E27; --cond:#6B4FBB;
+  --bg:#f5f5f4; --card:#fff; --txt:#1f2124; --txt2:#5f6368; --bord:#e3e3e0;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:Calibri,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:16px}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ---------- Header ---------- */
+header{background:#fff;border-bottom:3px solid var(--rouge);padding:8px 14px;display:flex;align-items:center;gap:12px;flex:0 0 auto}
+.eyebrow{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--rouge);font-weight:700}
+header h1{margin:1px 0 0;font-size:17px;font-weight:700;line-height:1.1}
+.hspacer{flex:1}
+.badge{font-size:14px;padding:7px 13px;border-radius:20px;background:#eef0ee;color:var(--txt2);white-space:nowrap}
+.badge.on{background:#e6f4ea;color:var(--ok)}
+.badge.off{background:#fdecea;color:var(--ko)}
+.badge.wait{background:#fef0e0;color:var(--dalle);cursor:pointer}
+
+/* ---------- Layout ---------- */
+#main{flex:1 1 auto;display:flex;min-height:0}
+#panel{width:300px;flex:0 0 300px;background:#fff;border-right:1px solid var(--bord);overflow-y:auto;padding:12px}
+#stage{flex:1 1 auto;position:relative;display:flex;flex-direction:column;height:100%}
+#map{flex:1 1 auto;height:0;position:relative}
+#listview{display:none;flex:1 1 auto;overflow-y:auto;padding:10px;background:var(--bg)}
+body.list #map{display:none}
+body.list #listview{display:block}
+
+.sect{margin-bottom:16px}
+.sect h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt2)}
+select,input[type=text],textarea{width:100%;padding:13px 10px;border:1px solid var(--bord);border-radius:8px;font-family:inherit;font-size:16px;background:#fff}
+textarea{resize:vertical;min-height:110px;line-height:1.4}
+.legend div{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:13px}
+.dot{width:13px;height:13px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25);flex:0 0 auto}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stat{background:var(--bg);border-radius:6px;padding:7px 9px}
+.stat b{display:block;font-size:21px;line-height:1.1}
+.stat span{font-size:12px;color:var(--txt2)}
+
+button{font-family:inherit;font-size:14px;cursor:pointer}
+.btn{display:block;width:100%;min-height:52px;padding:14px;border:1px solid var(--bord);background:#fff;border-radius:9px;margin-top:8px;font-weight:600;font-size:16px}
+.btn.primary{background:var(--rouge);color:#fff;border-color:var(--rouge)}
+.btn.ghost{background:#fff}
+.btn:disabled{opacity:.5}
+
+/* ---------- Barre outils carte ---------- */
+#tools{position:absolute;z-index:500;top:10px;right:10px;display:flex;flex-direction:column;gap:6px}
+#tools button{background:#fff;border:1px solid var(--bord);border-radius:9px;padding:13px 15px;box-shadow:0 1px 5px rgba(0,0,0,.22);font-size:15px;font-weight:600;min-width:56px}
+#tools button.active{background:var(--rouge);color:#fff;border-color:var(--rouge)}
+
+/* ---------- Cartes liste ---------- */
+.card{background:var(--card);border:1px solid var(--bord);border-left:7px solid var(--gris);border-radius:9px;padding:14px 14px;margin-bottom:10px;cursor:pointer}
+.card h4{margin:0;font-size:17px}
+.card p{margin:4px 0 0;font-size:14px;color:var(--txt2);line-height:1.35}
+.card .meta{margin-top:8px;font-size:13px;color:var(--txt2);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;font-size:13px;padding:4px 10px;border-radius:12px;background:#eef0ee;color:var(--txt2)}
+
+/* ---------- Fiche site ---------- */
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1200;display:none}
+#sheet.open{display:block}
+#sheetBox{position:absolute;right:0;top:0;bottom:0;width:460px;max-width:100%;background:#fff;overflow-y:auto;padding:16px 16px 100px;box-shadow:-4px 0 18px rgba(0,0,0,.2)}
+#sheetBox h2{margin:2px 0 2px;font-size:18px}
+.close{position:absolute;top:10px;right:12px;border:0;background:#eef0ee;border-radius:50%;width:44px;height:44px;font-size:20px;line-height:1;z-index:5}
+.verdicts{display:grid;gap:7px;margin:8px 0}
+.verdict{display:flex;align-items:center;gap:12px;min-height:64px;padding:14px 16px;border:2px solid var(--bord);border-radius:10px;background:#fff;text-align:left;font-weight:700;font-size:17px}
+.verdict.sel{border-color:currentColor;background:#fafafa;box-shadow:inset 0 0 0 2px currentColor}
+.photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.thumb{position:relative;width:104px;height:104px;border-radius:7px;overflow:hidden;border:1px solid var(--bord)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.thumb button{position:absolute;top:3px;right:3px;width:30px;height:30px;border:0;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:15px;line-height:1}
+.addphoto{width:104px;height:104px;border:2px dashed var(--bord);border-radius:9px;background:#fafafa;font-size:13px;color:var(--txt2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+#sheetFooter{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--bord);padding:10px 0 0;margin-top:14px}
+.hint{font-size:12px;color:var(--txt2);margin:5px 0 0}
+.hist{font-size:12px;color:var(--txt2);border-left:3px solid var(--bord);padding-left:8px;margin-top:6px}
+
+/* ---------- Toast ---------- */
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#1f2124;color:#fff;padding:11px 17px;border-radius:8px;font-size:14px;z-index:3000;display:none;max-width:90%}
+
+/* ---------- Mobile ---------- */
+#tabs{display:none;flex:0 0 auto;background:#fff;border-top:1px solid var(--bord)}
+#tabs button{flex:1;padding:16px;border:0;background:#fff;font-weight:700;font-size:16px;color:var(--txt2);border-top:4px solid transparent}
+#tabs button.active{color:var(--rouge);border-top-color:var(--rouge)}
+@media(max-width:1100px){
+  #panel{position:fixed;inset:0 0 auto;top:0;z-index:1100;width:100%;height:100%;display:none;padding-top:14px}
+  body.filters #panel{display:block}
+  #tabs{display:flex}
+  #sheetBox{width:100%;top:auto;height:94%;border-radius:16px 16px 0 0;padding:18px 18px 110px}
+  header h1{font-size:15px}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <div>
+      <div class="eyebrow">NCPA · Maîtrise des déchets</div>
+      <h1>Vérification terrain — Cabanes à cartons</h1>
+    </div>
+    <div class="hspacer"></div>
+    <span class="badge" id="bNet">Réseau…</span>
+    <span class="badge wait" id="bQueue" onclick="viderFile()" style="display:none"></span>
+    <button class="btn" style="width:auto;margin:0;padding:10px 16px;min-height:44px" onclick="document.body.classList.toggle('filters')" id="btnFiltres">Filtres</button>
+  </header>
+
+  <div id="main">
+    <aside id="panel">
+      <div class="sect">
+        <h3>Avancement</h3>
+        <div class="stats" id="stats"></div>
+      </div>
+      <div class="sect">
+        <h3>Filtres</h3>
+        <select id="fCommune" onchange="rafraichir()"><option value="">Toutes les communes</option></select>
+        <select id="fStatut" onchange="rafraichir()" style="margin-top:6px">
+          <option value="">Tous les statuts</option>
+          <option value="non_verifie">À vérifier</option>
+          <option value="fait">Déjà vérifiés</option>
+        </select>
+        <select id="fTri" onchange="rafraichir()" style="margin-top:6px">
+          <option value="proche">Trier : les plus proches de moi</option>
+          <option value="commune">Trier : commune A→Z</option>
+        </select>
+      </div>
+      <div class="sect">
+        <h3>Légende</h3>
+        <div class="legend">
+          <div><span class="dot" style="background:var(--gris)"></span> Non vérifié</div>
+          <div><span class="dot" style="background:var(--ok)"></span> Surface existante OK</div>
+          <div><span class="dot" style="background:var(--dalle)"></span> Dalle à créer</div>
+          <div><span class="dot" style="background:var(--ko)"></span> Place insuffisante</div>
+          <div><span class="dot" style="background:var(--cond)"></span> Conditionnel / à revoir</div>
+          <div><span class="dot" style="background:#1a73e8"></span> Ma position</div>
+        </div>
+      </div>
+      <div class="sect">
+        <button class="btn ghost" onclick="synchroniser(true)">Actualiser depuis le serveur</button>
+        <button class="btn ghost" onclick="localiser()">Me localiser</button>
+        <button class="btn ghost" onclick="document.body.classList.remove('filters')" style="display:none" id="btnFermeFiltres">Fermer</button>
+        <p class="hint" id="lastSync">Jamais synchronisé.</p>
+      </div>
+    </aside>
+
+    <div id="stage">
+      <div id="map">
+        <div id="tools">
+          <button onclick="basculeFond()" id="btnFond">Satellite</button>
+          <button onclick="localiser()">◎ GPS</button>
+        </div>
+      </div>
+      <div id="listview"></div>
+    </div>
+  </div>
+
+  <div id="tabs">
+    <button class="active" onclick="ongletCarte()" id="tabMap">Carte</button>
+    <button onclick="ongletListe()" id="tabList">Liste</button>
+  </div>
+</div>
+
+<!-- Fiche site -->
+<div id="sheet" onclick="if(event.target===this)fermerFiche()">
+  <div id="sheetBox">
+    <button class="close" onclick="fermerFiche()">✕</button>
+    <div id="sheetContent"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =======================================================================
+   CONFIGURATION — les 2 seules lignes à modifier après le déploiement
+   ======================================================================= */
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1gDFWknQ3uXkhqKwU1xPa7O_qUtEIP5QlzJ9SgGROEYVjqXEV9QpXhZfz9ZuUKiCtIQ/exec";   // https://script.google.com/macros/s/..../exec
+/* ======================================================================= */
+
+const SITES = [
+ {"id": "14045-01", "insee": "14045", "commune": "Basseneville", "lib": "au grand PDR du chemin de la chapelle", "lat": 49.1992948, "lon": -0.1304629, "coul": "6002", "prio": 1},
+ {"id": "14117-01", "insee": "14117", "commune": "Cabourg", "lib": "Avenue commandant Touchard (2/2)", "lat": 49.2939993, "lon": -0.1142145, "coul": "5005", "prio": 2},
+ {"id": "14117-02", "insee": "14117", "commune": "Cabourg", "lib": "Rue Pointcarré", "lat": 49.286698, "lon": -0.1120432, "coul": "5005", "prio": 2},
+ {"id": "14117-03", "insee": "14117", "commune": "Cabourg", "lib": "Rue du Pont de Pierre", "lat": 49.2825968, "lon": -0.1197132, "coul": "5005", "prio": 2},
+ {"id": "14203-01", "insee": "14203", "commune": "Cricqueville-en-Auge", "lib": "chemin des Fourcamps/ à l'entrée des chemins des allées de Grangues pour un usage commun avec Grangues", "lat": 49.2504965, "lon": -0.062919, "coul": "8024", "prio": 1},
+ {"id": "14203-02", "insee": "14203", "commune": "Cricqueville-en-Auge", "lib": "Intersection du chemin d’Angoville et de la D49 A – A coté de la poche incendie", "lat": 49.2409198, "lon": -0.0716616, "coul": "8024", "prio": 1},
+ {"id": "14227-01", "insee": "14227", "commune": "Douville-en-Auge", "lib": "sur le PDR du lavoir", "lat": 49.2629216, "lon": -0.0256017, "coul": "LASURE", "prio": 1},
+ {"id": "14227-02", "insee": "14227", "commune": "Douville-en-Auge", "lib": "sur la croix Marie si possible après l'aménagement de la réserve incendie", "lat": 49.2592541, "lon": -0.0346145, "coul": "LASURE", "prio": 1},
+ {"id": "14229-01", "insee": "14229", "commune": "Dozulé", "lib": "Près du PAV derrière les pompiers", "lat": 49.2305159, "lon": -0.043261, "coul": "3005", "prio": 1},
+ {"id": "14229-02", "insee": "14229", "commune": "Dozulé", "lib": "PDR avenue Michel D'Ornano", "lat": 49.2268844, "lon": -0.0457174, "coul": "3005", "prio": 1},
+ {"id": "14229-03", "insee": "14229", "commune": "Dozulé", "lib": "rue Oinville", "lat": 49.2337048, "lon": -0.0500232, "coul": "3005", "prio": 1},
+ {"id": "14229-04", "insee": "14229", "commune": "Dozulé", "lib": "Impasse Amédée Richer", "lat": 49.2317751, "lon": -0.0442784, "coul": "3005", "prio": 1},
+ {"id": "14229-05", "insee": "14229", "commune": "Dozulé", "lib": "Place du marché / Place de la Mairie", "lat": 49.2310181, "lon": -0.0455244, "coul": "3005", "prio": 1},
+ {"id": "14246-01", "insee": "14246", "commune": "Escoville", "lib": "à côté de la salle des fêtes", "lat": 49.2099769, "lon": -0.238288, "coul": "8024", "prio": 1},
+ {"id": "14306-01", "insee": "14306", "commune": "Gonneville-en-Auge", "lib": "une possibilité à côté des autres colonnes d'AV", "lat": 49.260702, "lon": -0.191279, "coul": "LASURE", "prio": 1},
+ {"id": "14308-01", "insee": "14308", "commune": "Goustranville", "lib": "une au PDR de l'autoroute si maintenue en place", "lat": 49.2230905, "lon": -0.1063793, "coul": "8011", "prio": 1},
+ {"id": "14316-01", "insee": "14316", "commune": "Grangues", "lib": "1 sur le parking de l'église", "lat": 49.2655842, "lon": -0.0566205, "coul": "LASURE", "prio": 1},
+ {"id": "14335-01", "insee": "14335", "commune": "Hotot-en-Auge", "lib": "1 au niveau de la loge rénovée", "lat": 49.1922558, "lon": -0.0783627, "coul": "8011", "prio": 1},
+ {"id": "14409-01", "insee": "14409", "commune": "Merville-Franceville-Plage", "lib": "Front de mer, zone Houdart, emplacement précis reste à définir", "lat": 49.2846627, "lon": -0.202571, "coul": "5005", "prio": 1},
+ {"id": "14409-02", "insee": "14409", "commune": "Merville-Franceville-Plage", "lib": "Zone tri devant déchèterie", "lat": 49.2775657, "lon": -0.2017736, "coul": "5005", "prio": 2},
+ {"id": "14409-03", "insee": "14409", "commune": "Merville-Franceville-Plage", "lib": "Parking Relais", "lat": 49.2836473, "lon": -0.1885537, "coul": "5005", "prio": 2},
+ {"id": "14598-01", "insee": "14598", "commune": "Saint-Jouin", "lib": "Chemin de l'Eglise", "lat": 49.2196555, "lon": -0.0168086, "coul": "6002", "prio": 2},
+ {"id": "14606-01", "insee": "14606", "commune": "Saint-Léger-Dubosq", "lib": "1 sur le parking de l'église", "lat": 49.2293171, "lon": -0.0306464, "coul": "LASURE", "prio": 1},
+ {"id": "14665-01", "insee": "14665", "commune": "Sallenelles", "lib": "1 à côté de la mairie", "lat": 49.2649991, "lon": -0.226143, "coul": "LASURE", "prio": 1},
+ {"id": "14698-01", "insee": "14698", "commune": "Touffréville", "lib": "à côté de la colonne à verre, place de l'église", "lat": 49.1885716, "lon": -0.2244639, "coul": "6000", "prio": 1},
+ {"id": "14724-01", "insee": "14724", "commune": "Varaville", "lib": "au Home rue du Général Leclerc", "lat": 49.2820606, "lon": -0.1616635, "coul": "5005", "prio": 2},
+ {"id": "14724-02", "insee": "14724", "commune": "Varaville", "lib": "déchetterie du bourg", "lat": 49.25437, "lon": -0.1543197, "coul": "5005", "prio": 2},
+ {"id": "14724-03", "insee": "14724", "commune": "Varaville", "lib": "Mairie", "lat": 49.2848786, "lon": -0.1549457, "coul": "5005", "prio": 2},
+ {"id": "14743-01", "insee": "14743", "commune": "Victot-en-Auge", "lib": "Parking Chemin de l'Eglise, Gerrots", "lat": 49.1928667, "lon": -0.0050547, "coul": "LASURE", "prio": 1},
+ {"id": "14743-02", "insee": "14743", "commune": "Victot-en-Auge", "lib": "PDR Chapelle de Pontfol", "lat": 49.1653642, "lon": 0.003191, "coul": "LASURE", "prio": 2}
+];
+
+const STATUTS = {
+  non_verifie : {lab:"Non vérifié",            col:"var(--gris)",  hex:"#9AA0A6"},
+  ok_existant : {lab:"Surface existante OK",   col:"var(--ok)",    hex:"#1E8E3E"},
+  dalle_a_creer:{lab:"Dalle à créer",          col:"var(--dalle)", hex:"#E8710A"},
+  insuffisant : {lab:"Place insuffisante",     col:"var(--ko)",    hex:"#B91E27"},
+  conditionnel: {lab:"Conditionnel / à revoir",col:"var(--cond)",  hex:"#6B4FBB"}
+};
+
+let etat = {};                 // id -> {statut, date, commentaire, lat, lon, nb_photos}
+let file = JSON.parse(localStorage.getItem('ncpa_file') || '[]');  // envois en attente
+let maPos = null, siteCourant = null, brouillon = null;
+let map, cPositron, cOrtho, cMarkers, mMoi, mDrag = null, fondSat = false;
+
+/* ---------------- Utilitaires ---------------- */
+const $ = s => document.querySelector(s);
+function toast(msg, ms){ const t=$('#toast'); t.textContent=msg; t.style.display='block';
+  clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none', ms||2800); }
+function dist(a,b,c,d){ const R=6371000,r=Math.PI/180;
+  const x=(c-a)*r, y=(d-b)*r, h=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h)); }
+function fmtD(m){ return m==null?'' : (m<1000 ? Math.round(m)+' m' : (m/1000).toFixed(1)+' km'); }
+function uuid(){ return 'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function statutDe(id){ return (etat[id] && etat[id].statut) || 'non_verifie'; }
+
+/* ---------------- Démarrage ---------------- */
+function init(){
+  const c=[...new Set(SITES.map(s=>s.commune))].sort();
+  c.forEach(x=>{ const o=document.createElement('option'); o.value=x; o.textContent=x; $('#fCommune').appendChild(o); });
+  if(window.innerWidth<=1100) $('#btnFermeFiltres').style.display='block';
+  demarrer();
+}
+function demarrer(){
+  etat = JSON.parse(localStorage.getItem('ncpa_etat') || '{}');
+  creerCarte();
+  rafraichir();
+  synchroniser(false);
+  localiser(true);
+  majReseau();
+  setInterval(traiterFile, 20000);
+}
+
+/* ---------------- Carte ---------------- */
+function creerCarte(){
+  map = L.map('map', {zoomControl:true}).setView([49.245,-0.115], 11);
+  cPositron = L.maplibreGL({ style:'https://tiles.openfreemap.org/styles/positron' }).addTo(map);
+  cOrtho = L.tileLayer(
+    'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image%2Fjpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+    {maxNativeZoom:19, maxZoom:21, attribution:'© IGN / Géoplateforme'});
+  map.attributionControl.addAttribution('© OpenStreetMap · OpenFreeMap');
+  cMarkers = L.layerGroup().addTo(map);
+  setTimeout(()=>map.invalidateSize(), 200);
+}
+function basculeFond(){
+  fondSat = !fondSat;
+  if(fondSat){ map.removeLayer(cPositron); cOrtho.addTo(map); $('#btnFond').textContent='Plan'; }
+  else { map.removeLayer(cOrtho); cPositron.addTo(map); $('#btnFond').textContent='Satellite'; }
+  setTimeout(()=>map.invalidateSize(), 100);
+}
+function icone(st, num){
+  const c = STATUTS[st].hex;
+  return L.divIcon({className:'', iconSize:[36,36], iconAnchor:[18,18], html:
+    `<div style="width:34px;height:34px;border-radius:50%;background:${c};border:3px solid #fff;
+      box-shadow:0 1px 5px rgba(0,0,0,.45);color:#fff;font:700 14px Calibri,sans-serif;
+      display:flex;align-items:center;justify-content:center">${num}</div>`});
+}
+
+/* ---------------- Filtres / rendu ---------------- */
+function sitesFiltres(){
+  const fc=$('#fCommune').value, fs=$('#fStatut').value, tri=$('#fTri').value;
+  let L2 = SITES.filter(s=>{
+    if(fc && s.commune!==fc) return false;
+    const st=statutDe(s.id);
+    if(fs==='non_verifie' && st!=='non_verifie') return false;
+    if(fs==='fait' && st==='non_verifie') return false;
+    return true;
+  });
+  L2 = L2.map(s=>{ const e=etat[s.id]||{};
+    const lat = e.lat||s.lat, lon = e.lon||s.lon;
+    return Object.assign({}, s, {_lat:lat,_lon:lon, _d: maPos ? dist(maPos.lat,maPos.lon,lat,lon) : null}); });
+  if(tri==='proche' && maPos) L2.sort((a,b)=>a._d-b._d);
+  else L2.sort((a,b)=> a.commune.localeCompare(b.commune) || a.id.localeCompare(b.id));
+  return L2;
+}
+function rafraichir(){
+  const L2 = sitesFiltres();
+  // carte
+  cMarkers.clearLayers();
+  L2.forEach((s,i)=>{
+    const m = L.marker([s._lat,s._lon], {icon:icone(statutDe(s.id), i+1)}).addTo(cMarkers);
+    m.on('click', ()=>ouvrirFiche(s.id));
+  });
+  // liste
+  $('#listview').innerHTML = L2.map((s,i)=>{
+    const st=statutDe(s.id), e=etat[s.id]||{};
+    return `<div class="card" style="border-left-color:${STATUTS[st].hex}" onclick="ouvrirFiche('${s.id}')">
+      <h4>${i+1}. ${s.commune}</h4>
+      <p>${s.lib}</p>
+      <div class="meta">
+        <span class="chip">${STATUTS[st].lab}</span>
+        ${s._d!=null?`<span><b>${fmtD(s._d)}</b></span>`:''}
+      </div></div>`;
+  }).join('') || '<p style="color:var(--txt2)">Aucun site avec ces filtres.</p>';
+  // stats
+  const tot=SITES.length, fait=SITES.filter(s=>statutDe(s.id)!=='non_verifie').length;
+  $('#stats').innerHTML =
+    `<div class="stat"><b>${fait}/${tot}</b><span>sites vérifiés</span></div>
+     <div class="stat"><b>${SITES.filter(s=>statutDe(s.id)==='ok_existant').length}</b><span>surface OK</span></div>
+     <div class="stat"><b>${SITES.filter(s=>statutDe(s.id)==='dalle_a_creer').length}</b><span>dalle à créer</span></div>
+     <div class="stat"><b>${SITES.filter(s=>statutDe(s.id)==='insuffisant').length}</b><span>place insuffisante</span></div>`;
+}
+function ongletCarte(){ document.body.classList.remove('list'); $('#tabMap').classList.add('active');
+  $('#tabList').classList.remove('active'); setTimeout(()=>map.invalidateSize(),100); }
+function ongletListe(){ document.body.classList.add('list'); $('#tabList').classList.add('active');
+  $('#tabMap').classList.remove('active'); }
+
+/* ---------------- Géolocalisation ---------------- */
+function localiser(silencieux){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(p=>{
+    maPos = {lat:p.coords.latitude, lon:p.coords.longitude, acc:p.coords.accuracy};
+    if(!mMoi) mMoi = L.circleMarker([maPos.lat,maPos.lon],
+      {radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(map);
+    else mMoi.setLatLng([maPos.lat,maPos.lon]);
+    if(!silencieux){ map.setView([maPos.lat,maPos.lon], 17); silencieux=true; }
+    rafraichir();
+  }, e=>{ if(!silencieux) toast("GPS indisponible : "+e.message); },
+     {enableHighAccuracy:true, maximumAge:10000, timeout:15000});
+}
+
+/* ---------------- Fiche site ---------------- */
+function ouvrirFiche(id){
+  siteCourant = SITES.find(s=>s.id===id);
+  const e = etat[id] || {};
+  brouillon = { statut: e.statut||null, commentaire: e.commentaire||'', photos: [],
+                lat: e.lat||siteCourant.lat, lon: e.lon||siteCourant.lon, deplace: !!e.lat };
+  dessinerFiche();
+  $('#sheet').classList.add('open');
+}
+function dessinerFiche(){
+  const s = siteCourant, e = etat[s.id] || {};
+  const d = maPos ? fmtD(dist(maPos.lat,maPos.lon,brouillon.lat,brouillon.lon)) : '—';
+  const dep = brouillon.deplace ? Math.round(dist(s.lat,s.lon,brouillon.lat,brouillon.lon)) : 0;
+  $('#sheetContent').innerHTML = `
+    <div class="eyebrow">${s.id}</div>
+    <h2>${s.commune}</h2>
+    <p style="margin:2px 0 10px;color:var(--txt2)">${s.lib}</p>
+    <div class="meta" style="font-size:13px;color:var(--txt2)">Distance depuis ma position : <b>${d}</b></div>
+    ${e.statut?`<div class="hist">Déjà renseigné le ${e.date?new Date(e.date).toLocaleDateString('fr-FR'):'?'} : ${STATUTS[e.statut].lab}${e.commentaire?'<br>« '+e.commentaire+' »':''}</div>`:''}
+
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">1. La cabane peut-elle être posée ?</h3>
+    <div class="verdicts">
+      ${Object.entries(STATUTS).filter(([k])=>k!=='non_verifie').map(([k,v])=>`
+        <button class="verdict ${brouillon.statut===k?'sel':''}" style="color:${v.hex}" onclick="choisir('${k}')">
+          <span class="dot" style="background:${v.hex}"></span><span style="color:var(--txt)">${v.lab}</span>
+        </button>`).join('')}
+    </div>
+
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">2. Photos (1 à 3)</h3>
+    <div class="photos" id="photos"></div>
+    <p class="hint">Vue d'ensemble + surface au sol. Les photos sont compressées avant envoi.</p>
+
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">3. Commentaire</h3>
+    <textarea id="cmt" placeholder="Place disponible, revêtement, contraintes d'accès, riverains…">${brouillon.commentaire}</textarea>
+
+    <h3 style="margin:16px 0 0;font-size:12px;text-transform:uppercase;color:var(--txt2)">4. Emplacement</h3>
+    <button class="btn ghost" onclick="repositionnerGPS()">Recaler sur ma position GPS actuelle</button>
+    <button class="btn ghost" onclick="repositionnerCarte()">Déplacer le point sur la carte</button>
+    ${dep?`<p class="hint">Point déplacé de ${dep} m par rapport au point d'origine.</p>`:'<p class="hint">Point inchangé.</p>'}
+
+    <div id="sheetFooter">
+      <button class="btn primary" onclick="enregistrer()">Enregistrer et envoyer</button>
+      <button class="btn ghost" onclick="fermerFiche()">Annuler</button>
+    </div>`;
+  dessinerPhotos();
+}
+function choisir(k){ brouillon.statut=k; lireChamps(); dessinerFiche(); }
+function lireChamps(){ const t=$('#cmt'); if(t) brouillon.commentaire=t.value; }
+function fermerFiche(){ $('#sheet').classList.remove('open'); if(mDrag){ map.removeLayer(mDrag); mDrag=null; } }
+
+function dessinerPhotos(){
+  const z = $('#photos'); if(!z) return;
+  z.innerHTML = brouillon.photos.map((p,i)=>
+    `<div class="thumb"><img src="${p}"><button onclick="suppPhoto(${i})">✕</button></div>`).join('');
+  if(brouillon.photos.length < 3){
+    const l = document.createElement('label'); l.className='addphoto';
+    l.innerHTML = '<span style="font-size:22px">＋</span><span>Photo</span>'+
+      '<input type="file" accept="image/*" capture="environment" style="display:none" onchange="ajouterPhoto(this)">';
+    z.appendChild(l);
+  }
+}
+function suppPhoto(i){ brouillon.photos.splice(i,1); dessinerPhotos(); }
+function ajouterPhoto(input){
+  const f = input.files[0]; if(!f) return;
+  const img = new Image(), fr = new FileReader();
+  fr.onload = ()=>{ img.onload = ()=>{
+      const max=1600, r=Math.min(1, max/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*r); cv.height=Math.round(img.height*r);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      brouillon.photos.push(cv.toDataURL('image/jpeg', 0.7));
+      dessinerPhotos();
+    }; img.src = fr.result; };
+  fr.readAsDataURL(f); input.value='';
+}
+function repositionnerGPS(){
+  if(!maPos) return toast("Position GPS non disponible.");
+  brouillon.lat=maPos.lat; brouillon.lon=maPos.lon; brouillon.deplace=true;
+  lireChamps(); dessinerFiche(); toast("Point recalé sur votre position.");
+}
+function repositionnerCarte(){
+  lireChamps(); fermerFicheGarderBrouillon();
+  if(mDrag) map.removeLayer(mDrag);
+  mDrag = L.marker([brouillon.lat,brouillon.lon], {draggable:true}).addTo(map)
+    .bindTooltip("Glissez-moi puis touchez « Valider »", {permanent:true, direction:'top'}).openTooltip();
+  map.setView([brouillon.lat,brouillon.lon], 19);
+  ongletCarte();
+  const b=document.createElement('button'); b.className='btn primary'; b.id='btnValidPos';
+  b.textContent='Valider la nouvelle position';
+  b.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);width:auto;padding:12px 20px;z-index:1500';
+  b.onclick=()=>{ const p=mDrag.getLatLng(); brouillon.lat=p.lat; brouillon.lon=p.lng; brouillon.deplace=true;
+    map.removeLayer(mDrag); mDrag=null; b.remove(); dessinerFiche(); $('#sheet').classList.add('open'); };
+  document.body.appendChild(b);
+}
+function fermerFicheGarderBrouillon(){ $('#sheet').classList.remove('open'); }
+
+/* ---------------- Enregistrement + file d'attente ---------------- */
+function enregistrer(){
+  lireChamps();
+  if(!brouillon.statut) return toast("Choisissez d'abord un constat.");
+  if(brouillon.photos.length===0 && !confirm("Aucune photo. Enregistrer quand même ?")) return;
+  const s = siteCourant;
+  const env = {
+    uuid: uuid(), id_site: s.id, insee: s.insee, commune: s.commune, libelle: s.lib,
+    statut: brouillon.statut, statut_libelle: STATUTS[brouillon.statut].lab,
+    commentaire: brouillon.commentaire, date: new Date().toISOString(),
+    lat_origine: s.lat, lon_origine: s.lon, lat: brouillon.lat, lon: brouillon.lon,
+    deplace_m: brouillon.deplace ? Math.round(dist(s.lat,s.lon,brouillon.lat,brouillon.lon)) : 0,
+    photos: brouillon.photos
+  };
+  etat[s.id] = {statut:env.statut, date:env.date, commentaire:env.commentaire,
+                lat:env.lat, lon:env.lon, nb_photos:env.photos.length};
+  localStorage.setItem('ncpa_etat', JSON.stringify(etat));
+  file.push(env); sauverFile();
+  fermerFiche(); rafraichir();
+  toast("Enregistré. Envoi en cours…");
+  traiterFile();
+}
+function sauverFile(){
+  try { localStorage.setItem('ncpa_file', JSON.stringify(file)); }
+  catch(e){ toast("Mémoire de la tablette saturée : synchronisez dès que possible."); }
+  majReseau();
+}
+async function traiterFile(){
+  if(!file.length || !navigator.onLine || traiterFile._busy) return;
+  traiterFile._busy = true;
+  while(file.length && navigator.onLine){
+    const env = file[0];
+    try{
+      const r = await fetch(SCRIPT_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+                                         body: JSON.stringify(env)});
+      const j = await r.json();
+      if(j.ok){ file.shift(); sauverFile(); }
+      else { toast("Erreur serveur : "+(j.error||'?')); break; }
+    }catch(err){ break; }   // hors ligne / coupure : on retentera
+  }
+  traiterFile._busy = false;
+  majReseau();
+  if(!file.length) toast("Tout est envoyé ✓");
+}
+function viderFile(){ if(navigator.onLine) { toast("Nouvel essai d'envoi…"); traiterFile(); }
+  else toast("Pas de réseau : les fiches partiront automatiquement au retour du réseau."); }
+function majReseau(){
+  const on = navigator.onLine;
+  $('#bNet').textContent = on ? 'En ligne' : 'Hors ligne';
+  $('#bNet').className = 'badge ' + (on?'on':'off');
+  const q = $('#bQueue');
+  if(file.length){ q.style.display='inline-block'; q.textContent = file.length+' en attente'; }
+  else q.style.display='none';
+}
+window.addEventListener('online', ()=>{ majReseau(); traiterFile(); });
+window.addEventListener('offline', majReseau);
+window.addEventListener('beforeunload', e=>{ if(file.length){ e.preventDefault(); e.returnValue=''; } });
+
+/* ---------------- Synchronisation (lecture) ---------------- */
+function synchroniser(manuel){
+  if(!navigator.onLine){ if(manuel) toast("Hors ligne."); return; }
+  const cb = 'cb'+Date.now();
+  window[cb] = data => {
+    if(data && data.ok){
+      data.sites.forEach(r=>{
+        const loc = etat[r.id_site];
+        if(!loc || new Date(r.date) >= new Date(loc.date||0)) etat[r.id_site] = r;
+      });
+      localStorage.setItem('ncpa_etat', JSON.stringify(etat));
+      $('#lastSync').textContent = 'Synchronisé à '+new Date().toLocaleTimeString('fr-FR');
+      rafraichir();
+      if(manuel) toast("Données à jour.");
+    }
+    delete window[cb]; sc.remove();
+  };
+  const sc = document.createElement('script');
+  sc.src = SCRIPT_URL + '?action=list&callback=' + cb;
+  sc.onerror = ()=>{ if(manuel) toast("Serveur injoignable."); sc.remove(); };
+  document.body.appendChild(sc);
+}
+
+init();
+</script>
+</body>
+</html>
